@@ -1,6 +1,6 @@
 import { QueryList } from '@angular/core';
-import { fromEvent, Subscription, merge, Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { fromEvent, Subscription, merge, Observable, Subject } from 'rxjs';
+import { map, startWith, switchMap } from 'rxjs/operators';
 
 export interface SelectionItem {
   getElement: () => Element;
@@ -9,29 +9,42 @@ export interface SelectionItem {
   setInactive: () => void;
 }
 
-interface ClickInfo {
+interface ClickInfo<T> {
   index: number;
   isShift: boolean | undefined;
-  item: SelectionItem;
+  item: T;
 }
 
 export class MultiSelection<T extends SelectionItem> {
-  private subscription!: Subscription;
   private lastIndex!: number;
+  private subscription!: Subscription;
+  private activeChanges = new Subject();
+  activeChanges$ = this.activeChanges.asObservable();
+
+  private shouldSkip: (item: T) => boolean = () => false;
 
   constructor(private items: QueryList<T>) {
     this.init();
   }
 
+  skipPredicate(cb: (item: T) => boolean): MultiSelection<T> {
+    this.shouldSkip = cb;
+
+    return this;
+  }
+
   init(): void {
     const clicks$ = this.getListeners();
 
-    this.subscription = merge(...clicks$).subscribe(
-      ({ item, isShift, index }: ClickInfo) => {
+    this.subscription = clicks$.subscribe(
+      ({ item, isShift, index }: ClickInfo<T>) => {
         if (isShift === false) {
-          item.isActive() ? item.setInactive() : item.setActive();
+          if (this.shouldSkip(item)) {
+            return;
+          }
 
           this.lastIndex = index;
+          item.isActive() ? item.setInactive() : item.setActive();
         } else {
           const start = index;
           const end = this.lastIndex;
@@ -39,25 +52,48 @@ export class MultiSelection<T extends SelectionItem> {
           const inRange = this.items.toArray().slice(...range);
 
           const isActive = item.isActive();
-          inRange.forEach((current) =>
-            isActive ? current.setInactive() : current.setActive()
-          );
+          for (const current of inRange) {
+            if (this.shouldSkip(current)) {
+              continue;
+            }
+
+            isActive ? current.setInactive() : current.setActive();
+          }
         }
+
+        this.activeChanges.next(this.getActives());
       }
     );
   }
 
-  private getListeners(): Observable<ClickInfo>[] {
-    return this.items.map((item, index) =>
-      fromEvent(item.getElement(), 'click').pipe(
-        map(
-          (event: Partial<MouseEvent>): ClickInfo => ({
-            index,
-            isShift: event.shiftKey,
-            item
-          })
-        )
-      )
+  getActives(): SelectionItem[] {
+    return this.items.filter((item) => item.isActive());
+  }
+
+  destroy(): void {
+    this.subscription.unsubscribe();
+  }
+
+  private getListeners(): Observable<ClickInfo<T>> {
+    return this.items.changes.pipe(
+      startWith(this.items),
+      switchMap((items: T[]) => {
+        const clicks$ = items.map((item, index) => {
+          return fromEvent(item.getElement(), 'click').pipe(
+            map(
+              (event: Partial<MouseEvent>): ClickInfo<T> => {
+                return {
+                  index,
+                  isShift: event.shiftKey,
+                  item
+                };
+              }
+            )
+          );
+        });
+
+        return merge(...clicks$);
+      })
     );
   }
 }

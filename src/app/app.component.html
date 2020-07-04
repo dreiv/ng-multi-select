@@ -1,3 +1,15 @@
+<p>Select an item, and hold shift for multiple selection</p>
+
 <div class="flex">
   <box *ngFor="let num of [1,2,3,4,5,6]" [id]="num">{{num}}</box>
 </div>
+
+<form [formGroup]="group">
+  <div *ngFor="let skill of skills.controls; let i=index">
+    <input type="checkbox" [formControl]="skill" multiSelectionCheckbox />
+    {{ skillsList[i].name }}
+  </div>
+
+  <br>
+  {{ group.value | json }}
+</form>
