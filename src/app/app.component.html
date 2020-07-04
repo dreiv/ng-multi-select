@@ -6,8 +6,10 @@
 
 <form [formGroup]="group">
   <div *ngFor="let skill of skills.controls; let i=index">
-    <input type="checkbox" [formControl]="skill" multiSelectionCheckbox />
-    {{ skillsList[i].name }}
+    <label>
+      <input type="checkbox" [formControl]="skill" multiSelectionCheckbox />
+      {{ skillsList[i].name }}
+    </label>
   </div>
 
   <br>
